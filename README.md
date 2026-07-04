@@ -1,10 +1,9 @@
 
-
 ---
 
 # **Multilingual AI Dubbing System**
 
-<picture> <source media="(prefers-color-scheme: dark)" srcset="apps/frontend/assets/icon.png"> <source media="(prefers-color-scheme: light)" srcset="apps/frontend/assets/icon2.png"> <img src="apps/frontend/assets/icon-light.png" width="64" height="64" alt="Bluez icon"> </picture> <picture> <source media="(prefers-color-scheme: dark)" srcset="apps/frontend/assets/logo.png"> <source media="(prefers-color-scheme: light)" srcset="apps/frontend/assets/logo2.png"> <img src="apps/frontend/assets/logo-light.png" width="400" height="64" alt="Bluez logo"> </picture>
+<picture> <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Globluez/bluez-dubbing/main/apps/frontend/assets/icon.png"> <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/Globluez/bluez-dubbing/main/apps/frontend/assets/icon.png"> <img src="https://raw.githubusercontent.com/Globluez/bluez-dubbing/main/apps/frontend/assets/icon.png" width="64" height="64" alt="Bluez icon"> </picture> <picture> <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Globluez/bluez-dubbing/main/apps/frontend/assets/logo.png"> <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/Globluez/bluez-dubbing/main/apps/frontend/assets/logo.png"> <img src="https://raw.githubusercontent.com/Globluez/bluez-dubbing/main/apps/frontend/assets/logo.png" width="400" height="64" alt="Bluez logo"> </picture>
 
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://www.python.org/)
