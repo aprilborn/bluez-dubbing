@@ -1,0 +1,138 @@
+# ================================= YAML llm_polish configuration =================================
+# Context-aware LLM polish over an M2M-100 draft translation, refined by a local Ollama model.
+# Supported languages mirror the draft model (facebook_m2m100), which produces the first pass.
+languages:
+  - af # Afrikaans
+  - am # Amharic
+  - ar # Arabic
+  - ast # Asturleonese
+  - az # Azerbaijani
+  - ba # Bashkir
+  - be # Belarusian
+  - bg # Bulgarian
+  - bn # Bengali
+  - br # Breton
+  - bs # Bosnian
+  - ca # Catalan
+  - ceb # Cebuano
+  - cs # Czech
+  - cy # Welsh
+  - da # Danish
+  - de # German
+  - el # Greek
+  - en # English
+  - es # Spanish
+  - et # Estonian
+  - fa # Persian
+  - ff # Fulah
+  - fi # Finnish
+  - fr # French
+  - fy # Frisian
+  - ga # Irish
+  - gd # Scottish Gaelic
+  - gl # Galician
+  - gu # Gujarati
+  - ha # Hausa
+  - he # Hebrew
+  - hi # Hindi
+  - hr # Croatian
+  - ht # Haitian Creole
+  - hu # Hungarian
+  - hy # Armenian
+  - id # Indonesian
+  - ig # Igbo
+  - ilo # Iloko
+  - is # Icelandic
+  - it # Italian
+  - ja # Japanese
+  - jv # Javanese
+  - ka # Georgian
+  - kk # Kazakh
+  - km # Khmer
+  - kn # Kannada
+  - ko # Korean
+  - lb # Luxembourgish
+  - lg # Ganda
+  - ln # Lingala
+  - lo # Lao
+  - lt # Lithuanian
+  - lv # Latvian
+  - mg # Malagasy
+  - mk # Macedonian
+  - ml # Malayalam
+  - mn # Mongolian
+  - mr # Marathi
+  - ms # Malay
+  - my # Myanmar (Burmese)
+  - ne # Nepali
+  - nl # Dutch
+  - no # Norwegian
+  - ns # Northern Sotho
+  - oc # Occitan
+  - or # Odia
+  - pa # Punjabi
+  - pl # Polish
+  - ps # Pashto
+  - pt # Portuguese
+  - ro # Romanian
+  - ru # Russian
+  - sd # Sindhi
+  - si # Sinhala
+  - sk # Slovak
+  - sl # Slovenian
+  - so # Somali
+  - sq # Albanian
+  - sr # Serbian
+  - ss # Swati
+  - su # Sundanese
+  - sv # Swedish
+  - sw # Swahili
+  - ta # Tamil
+  - th # Thai
+  - tl # Tagalog
+  - tn # Tongan
+  - tr # Turkish
+  - uk # Ukrainian
+  - ur # Urdu
+  - uz # Uzbek
+  - vi # Vietnamese
+  - wo # Wolof
+  - xh # Xhosa
+  - yi # Yiddish
+  - yo # Yoruba
+  - zh # Chinese
+  - zu # Zulu
+
+
+
+params:
+  # Sibling plugin folder used to produce the first-pass draft translation.
+  draft_model_dir: facebook_m2m100Model
+  draft_model_name: facebook/m2m100_418M
+
+  # Local Ollama instance used to polish the draft.
+  ollama_url: http://localhost:11434
+  # Requested gemma3:12b-it-qat is not installed on this host; gemma4:12b-it-qat is the
+  # available equivalent. Change this to gemma3:12b-it-qat once it is pulled into Ollama.
+  ollama_model: gemma4:12b-it-qat
+  ollama_timeout: 600
+  temperature: 0.2
+  # Unload the model right after polishing so ASR (whisperx) and TTS (chatterbox)
+  # get the shared GPU back. 0 = unload now; use e.g. "5m" to keep it warm
+  # between jobs if you have VRAM headroom.
+  ollama_keep_alive: 0
+
+  # A 12B model can't reliably emit one huge JSON array, so segments are polished
+  # in chunks of `batch_size`, passing the last `context_size` finalized lines as
+  # read-only context to keep pronouns/references consistent across chunks.
+  batch_size: 20
+  context_size: 4
+  # Context window / max output tokens. gemma default is only 4096, which
+  # truncates larger batches; 8192 comfortably covers batch_size=20.
+  num_ctx: 8192
+  num_predict: 8192
+  # false = if the LLM drops a segment, keep its M2M draft (pipeline stays up).
+  # true  = fail the job on any dropped segment instead of falling back.
+  strict_polish: false
+
+  log_level: INFO

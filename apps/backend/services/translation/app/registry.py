@@ -16,7 +16,12 @@ WORKERS = {
             runner=BASE/"models/facebook_m2m100Model/runner.py",
             languages=read_model_languages("facebook_m2m100"),
         ),
-        
+        "llm_polish": Worker(
+            venv_python=BASE/"models/llm_polish/.venv/bin/python",
+            runner=BASE/"models/llm_polish/runner.py",
+            languages=read_model_languages("llm_polish"),
+        ),
+
     }
 
 def get_worker(model_key: str | None, source_language: int, target_language: str) -> tuple[Path, Path]:
