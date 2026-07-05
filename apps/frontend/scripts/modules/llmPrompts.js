@@ -34,7 +34,10 @@ const DEFAULTS = {
     "{{segments}}\n\n" +
     "Return exactly one improved entry per id shown above, reusing the same ids.\n" +
     "Rules:\n" +
-    "- Only improve the translated text; keep meaning faithful to `original`.\n" +
+    "- Treat `original` (the source-language text) as the source of truth for " +
+    "meaning. If the `draft` mistranslates, omits or distorts `original`, correct " +
+    "the translation so it faithfully conveys `original`.\n" +
+    "- Only output the translated text; never copy `original` verbatim.\n" +
     "- Fix pronouns/references so they stay consistent across segments.\n" +
     "- Prefer natural, idiomatic phrasing over literal word-for-word.\n" +
     "- Never merge, split, add or drop segments.",
