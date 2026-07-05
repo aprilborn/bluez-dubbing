@@ -8,6 +8,7 @@ import { ui } from './ui.js';
 import { token } from './token.js';
 import { results } from './results.js';
 import { transcriptionReview, alignmentReview, ttsReview } from './reviews.js';
+import { llmPrompts } from './llmPrompts.js';
 
 // Event Handlers
 const handlers = {
@@ -368,6 +369,7 @@ const handlers = {
     formData.set("sophisticated_dub_timing", document.getElementById("sophisticated-timing").checked ? "true" : "false");
     formData.set("persist_intermediate", document.getElementById("persist-intermediate").checked ? "true" : "false");
     formData.set("involve_mode", state.involveMode ? "true" : "false");
+    formData.set("llm_polish_prompts", JSON.stringify(llmPrompts.get()));
     
     const normalizeSpeakerField = (field, label) => {
       const raw = formData.get(field);

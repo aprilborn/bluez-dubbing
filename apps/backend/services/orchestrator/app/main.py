@@ -824,11 +824,13 @@ async def run_translation_step(
     segments: List[Dict[str, Any]],
     source_lang: Optional[str],
     target_lang: Optional[str],
+    extra: Optional[Dict[str, Any]] = None,
 ) -> ASRResponse:
     tr_req = TranslateRequest(
         segments=segments,
         source_lang=source_lang if source_lang else None,
         target_lang=target_lang if target_lang else None,
+        extra=extra or {},
         )
     response = await client.post(TR_URL, params={"model_key": tr_model}, json=tr_req.model_dump())
     if response.status_code != 200:
@@ -1431,6 +1433,7 @@ async def pipeline_run(
         subtitle_style: Optional[str] = Form(None),
         persist_intermediate: str = Form("false"),
         involve_mode: str = Form("false"),
+        llm_polish_prompts: Optional[str] = Form(None),
     ) -> StreamingResponse:
         uploads_dir = UPLOADS_DIR
         uploads_dir.mkdir(parents=True, exist_ok=True) # ensure uploads dir exists, just in case normally should be there already because of app startup
@@ -1441,6 +1444,16 @@ async def pipeline_run(
         upload_token: Optional[str] = None
         remote_input_used = False
         subtitle_style = (subtitle_style or "").strip() or None # since the Ui might send empty string we convert it to None here
+
+        # UI ships the llm_polish prompt overrides as a JSON string; tolerate bad input.
+        parsed_llm_polish_prompts: Optional[Dict[str, str]] = None
+        if llm_polish_prompts:
+            try:
+                loaded = json.loads(llm_polish_prompts)
+                if isinstance(loaded, dict):
+                    parsed_llm_polish_prompts = {str(k): str(v) for k, v in loaded.items()}
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("Ignoring malformed llm_polish_prompts payload.")
         if sep_model == "auto":
             sep_model = general_cfg.get("default_models", {}).get("sep", "melband_roformer_big_beta5e.ckpt")
 
@@ -1494,6 +1507,7 @@ async def pipeline_run(
                     persist_intermediate=parse_bool(persist_intermediate),
                     involve_mode=parse_bool(involve_mode),
                     run_id=run_id,
+                    llm_polish_prompts=parsed_llm_polish_prompts,
                 )
                 if not upload_token:
                     local_source = Path(result.get("source_media_local_path", "") or "")
@@ -1618,7 +1632,7 @@ async def dub(
     max_speakers: Optional[int] = None,
     sep_model: str = Query("melband_roformer_big_beta5e.ckpt"),
     asr_model: str = Query("whisperx"),
-    tr_model: str = Query("facebook_m2m100"),
+    tr_model: str = Query("llm_polish"),
     tts_model: str = Query("chatterbox"),
     audio_sep: bool = Query(True, description="Whether to perform audio source separation"),
     perform_vad_trimming: bool = Query(True, description="Whether to perform VAD-based silence trimming after TTS"),
@@ -1650,6 +1664,7 @@ async def dub(
         None,
         description="Optional run identifier when invoked from the job runner (required for involve mode).",
     ),
+    llm_polish_prompts: Optional[Dict[str, str]] = None,
 ):
     """
     Complete dubbing pipeline orchestrator.
@@ -1657,6 +1672,15 @@ async def dub(
 
     if involve_mode and not run_id:
         raise HTTPException(400, "Involve mode requires an active run context (run_id).")
+
+    # UI-editable prompt overrides for the llm_polish translation model. Forwarded
+    # verbatim via TranslateRequest.extra; the runner falls back to its defaults
+    # for any missing/blank key, so non-llm_polish models simply ignore these.
+    translation_extra = {
+        k: v
+        for k, v in (llm_polish_prompts or {}).items()
+        if k in ("system_prompt", "context_template", "user_template") and v
+    }
 
     original_source = video_url
     video_url = video_url.strip()
@@ -1683,7 +1707,7 @@ async def dub(
             requested_tr_model,
             TR_WORKERS,
             lang or source_lang,
-            fallback= general_cfg.get("default_models", {}).get("tr", "deep_translator"),
+            fallback= general_cfg.get("default_models", {}).get("tr", "llm_polish"),
         )
         tts_models_by_lang[lang] = resolve_model_choice(
             requested_tts_model,
@@ -1933,10 +1957,11 @@ async def dub(
                     with step_timer.time(f"translation[{lang}]"):
                         tr_result = await run_translation_step(
                             client,
-                            translation_models_by_lang.get(lang, general_cfg.get("default_models", {}).get("tr", "facebook_m2m100")),
+                            translation_models_by_lang.get(lang, general_cfg.get("default_models", {}).get("tr", "llm_polish")),
                             segments_for_translation,
                             source_lang,
                             lang,
+                            translation_extra,
                         )
                     workspace.maybe_dump_json(
                         f"translation/{lang}/translation_result.json",
@@ -1999,7 +2024,7 @@ async def dub(
 
             async def process_language(lang: str) -> Tuple[str, Dict[str, Any]]:
                 lang_suffix = f"[{lang}]"
-                translation_model_key = translation_models_by_lang.get(lang, general_cfg.get("default_models", {}).get("tr", "facebook_m2m100"))
+                translation_model_key = translation_models_by_lang.get(lang, general_cfg.get("default_models", {}).get("tr", "llm_polish"))
                 tts_model_key = tts_models_by_lang.get(lang, general_cfg.get("default_models", {}).get("tts", "chatterbox"))
                 per_language_models[lang] = {"translation": translation_model_key, "tts": tts_model_key}
 
@@ -2010,6 +2035,7 @@ async def dub(
                         segments_for_translation,
                         source_lang,
                         lang,
+                        translation_extra,
                     )
                 
 

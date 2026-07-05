@@ -28,7 +28,17 @@ _DEFAULT_OLLAMA_URL = "http://localhost:11434"
 # installed equivalent is gemma4:12b-it-qat. Override via config/llm_polish.yaml.
 _DEFAULT_OLLAMA_MODEL = "gemma4:12b-it-qat"
 
-_SYSTEM_PROMPT = (
+# The prompt text below is the default, editable from the UI. The three blocks
+# are exposed in the web UI (LLM Polish Instructions) and shipped back through
+# TranslateRequest.extra as `system_prompt`, `context_template` and
+# `user_template`. Any {{placeholder}} is substituted at run time (see
+# _render_user_prompt) — variables are kept as literal `{{name}}` tokens so we
+# substitute with str.replace, never str.format (the injected JSON contains
+# `{`/`}` that would break .format).
+#
+# KEEP IN SYNC: apps/frontend/scripts/modules/llmPrompts.js mirrors this text as
+# the UI defaults. Update both when changing the wording/placeholders.
+_DEFAULT_SYSTEM_PROMPT = (
     "You are a professional subtitle localization editor. You receive a full "
     "list of subtitle segments for one video, each with the original text and a "
     "rough machine-translated draft. You improve the draft translations as a "
@@ -38,6 +48,59 @@ _SYSTEM_PROMPT = (
     "MUST NOT merge, split, reorder, add or drop segments. Return one improved "
     "line per input segment, keyed by its id. Respond with JSON only."
 )
+
+# Injected into {{context_block}} only when there are preceding finalized lines.
+# {{context_pairs}} expands to their JSON.
+_DEFAULT_CONTEXT_TEMPLATE = (
+    "For continuity, here are the already-finalized translations of the "
+    "immediately preceding segments. Do NOT re-output them; use them only "
+    "to keep pronouns, references and terminology consistent:\n"
+    "{{context_pairs}}\n\n"
+)
+
+# Per-chunk instructions. {{segments}} expands to the chunk JSON; {{context_block}}
+# to the rendered context template (empty when there is no context).
+_DEFAULT_USER_TEMPLATE = (
+    "Target language (ISO code): {{target_lang}}\n"
+    "Source language (ISO code): {{source_lang}}\n\n"
+    "{{context_block}}"
+    "Improve the following subtitle segments. Each has an integer `id`, the "
+    "`original` source text and a machine-translated `draft`:\n\n"
+    "{{segments}}\n\n"
+    "Return exactly one improved entry per id shown above, reusing the same ids.\n"
+    "Rules:\n"
+    "- Only improve the translated text; keep meaning faithful to `original`.\n"
+    "- Fix pronouns/references so they stay consistent across segments.\n"
+    "- Prefer natural, idiomatic phrasing over literal word-for-word.\n"
+    "- Never merge, split, add or drop segments."
+)
+
+
+def _render_user_prompt(
+    user_template: str,
+    context_template: str,
+    chunk: List[Dict[str, object]],
+    context_pairs: List[Dict[str, object]],
+    req: TranslateRequest,
+) -> str:
+    """Substitute the runtime variables into the (possibly UI-overridden) prompt.
+
+    Pure/testable: no I/O. Uses str.replace (not str.format) because the injected
+    JSON contains braces that would break format-string parsing.
+    """
+    context_block = ""
+    if context_pairs:
+        context_block = context_template.replace(
+            "{{context_pairs}}", json.dumps(context_pairs, ensure_ascii=False)
+        )
+
+    return (
+        user_template
+        .replace("{{target_lang}}", req.target_lang or "")
+        .replace("{{source_lang}}", req.source_lang or "auto")
+        .replace("{{context_block}}", context_block)
+        .replace("{{segments}}", json.dumps(chunk, ensure_ascii=False))
+    )
 
 
 def _draft_worker_cmd(runner: Path) -> Tuple[str, ...]:
@@ -147,29 +210,14 @@ def _polish_chunk(
     options: Dict[str, object],
     keep_alive: object,
     timeout: float,
+    prompts: Dict[str, str],
 ) -> Dict[int, str]:
-    context_block = ""
-    if context_pairs:
-        context_block = (
-            "For continuity, here are the already-finalized translations of the "
-            "immediately preceding segments. Do NOT re-output them; use them only "
-            "to keep pronouns, references and terminology consistent:\n"
-            f"{json.dumps(context_pairs, ensure_ascii=False)}\n\n"
-        )
-
-    user_prompt = (
-        f"Target language (ISO code): {req.target_lang}\n"
-        f"Source language (ISO code): {req.source_lang or 'auto'}\n\n"
-        f"{context_block}"
-        "Improve the following subtitle segments. Each has an integer `id`, the "
-        "`original` source text and a machine-translated `draft`:\n\n"
-        f"{json.dumps(chunk, ensure_ascii=False)}\n\n"
-        "Return exactly one improved entry per id shown above, reusing the same ids.\n"
-        "Rules:\n"
-        "- Only improve the translated text; keep meaning faithful to `original`.\n"
-        "- Fix pronouns/references so they stay consistent across segments.\n"
-        "- Prefer natural, idiomatic phrasing over literal word-for-word.\n"
-        "- Never merge, split, add or drop segments."
+    user_prompt = _render_user_prompt(
+        prompts["user_template"],
+        prompts["context_template"],
+        chunk,
+        context_pairs,
+        req,
     )
 
     body = {
@@ -179,7 +227,7 @@ def _polish_chunk(
         "keep_alive": keep_alive,
         "options": options,
         "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": prompts["system_prompt"]},
             {"role": "user", "content": user_prompt},
         ],
     }
@@ -226,6 +274,13 @@ def _call_ollama(items: List[Dict[str, object]], req: TranslateRequest, logger: 
         "num_predict": int(extra.get("num_predict", 8192)),
     }
 
+    # UI-editable prompts; a blank/missing override falls back to the default.
+    prompts = {
+        "system_prompt": extra.get("system_prompt") or _DEFAULT_SYSTEM_PROMPT,
+        "context_template": extra.get("context_template") or _DEFAULT_CONTEXT_TEMPLATE,
+        "user_template": extra.get("user_template") or _DEFAULT_USER_TEMPLATE,
+    }
+
     logger.info(
         "Polishing %d segments via Ollama model=%s (batch_size=%d)",
         len(items),
@@ -241,7 +296,7 @@ def _call_ollama(items: List[Dict[str, object]], req: TranslateRequest, logger: 
         for chunk in _chunks(items, batch_size):
             ctx = finalized_context[-context_size:] if context_size else []
             try:
-                got = _polish_chunk(chunk, ctx, req, http, model, options, keep_alive, timeout)
+                got = _polish_chunk(chunk, ctx, req, http, model, options, keep_alive, timeout, prompts)
             except Exception as exc:  # noqa: BLE001 - degrade to draft, never fail the job
                 logger.warning(
                     "polish chunk (ids %d-%d) failed (%s: %s); using draft for these.",

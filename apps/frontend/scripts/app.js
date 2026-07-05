@@ -7,6 +7,7 @@ import { targetLangs } from "./modules/targetLangs.js";
 import { handlers } from "./modules/handlers.js";
 import { transcriptionReview, alignmentReview, ttsReview } from "./modules/reviews.js";
 import { theme } from "./modules/theme.js";
+import { llmPrompts } from "./modules/llmPrompts.js";
 
 const initInvolveMode = () => {
   if (!el.modeToggle) return;
@@ -170,6 +171,7 @@ const initUnloadCleanup = () => {
 
 const initApp = () => {
   theme.init();
+  llmPrompts.init();
   initInvolveMode();
   initReviewButtons();
   initInitialUI();

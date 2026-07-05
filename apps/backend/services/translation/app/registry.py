@@ -6,6 +6,14 @@ BASE = Path(__file__).resolve().parents[1]  # service root
 
 # Map multiple models for this service
 WORKERS = {
+        # llm_polish is the default: it is listed first so it appears at the top of
+        # the UI dropdown and is chosen for "auto" model selection (both the options
+        # list and resolve_model_choice honor this insertion order).
+        "llm_polish": Worker(
+            venv_python=BASE/"models/llm_polish/.venv/bin/python",
+            runner=BASE/"models/llm_polish/runner.py",
+            languages=read_model_languages("llm_polish"),
+        ),
         "deep_translator": Worker(
             venv_python=BASE/"models/deepTranslationModel/.venv/bin/python",
             runner=BASE/"models/deepTranslationModel/runner.py",
@@ -15,11 +23,6 @@ WORKERS = {
             venv_python=BASE/"models/facebook_m2m100Model/.venv/bin/python",
             runner=BASE/"models/facebook_m2m100Model/runner.py",
             languages=read_model_languages("facebook_m2m100"),
-        ),
-        "llm_polish": Worker(
-            venv_python=BASE/"models/llm_polish/.venv/bin/python",
-            runner=BASE/"models/llm_polish/runner.py",
-            languages=read_model_languages("llm_polish"),
         ),
 
     }

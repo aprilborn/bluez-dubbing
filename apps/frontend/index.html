@@ -137,6 +137,30 @@
                     </div>
                 </fieldset>
 
+                <details class="prompt-editor">
+                    <summary>LLM Polish Instructions</summary>
+                    <p class="hint">
+                        Instructions sent to the local LLM when the <code>llm_polish</code>
+                        translation model is used. Keep the <code>{{placeholder}}</code>
+                        tokens — they are filled in at run time. Saved in this browser.
+                    </p>
+                    <label>
+                        System prompt
+                        <textarea id="llm-system-prompt" rows="6" spellcheck="false"></textarea>
+                    </label>
+                    <label>
+                        Context block <span class="hint">variables: <code>{{context_pairs}}</code></span>
+                        <textarea id="llm-context-template" rows="4" spellcheck="false"></textarea>
+                    </label>
+                    <label>
+                        User prompt <span class="hint">variables: <code>{{target_lang}}</code>, <code>{{source_lang}}</code>, <code>{{context_block}}</code>, <code>{{segments}}</code></span>
+                        <textarea id="llm-user-template" rows="10" spellcheck="false"></textarea>
+                    </label>
+                    <div>
+                        <button type="button" id="llm-prompts-reset" class="secondary">Reset to defaults</button>
+                    </div>
+                </details>
+
                 <fieldset>
                     <legend>Diarization</legend>
                     <div class="flex">

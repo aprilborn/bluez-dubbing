@@ -287,6 +287,59 @@ legend {
     opacity: 0.7;
 }
 
+.prompt-editor {
+    border: 1px solid rgba(148, 156, 174, 0.3);
+    border-radius: 16px;
+    padding: 0 22px;
+    background: rgba(49, 51, 56, 0.32);
+}
+
+body[data-theme="light"] .prompt-editor {
+    background: rgba(246, 248, 252, 0.9);
+    border-color: rgba(188, 196, 212, 0.6);
+}
+
+.prompt-editor > summary {
+    cursor: pointer;
+    padding: 18px 0;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.74rem;
+    opacity: 0.7;
+}
+
+.prompt-editor[open] {
+    padding-bottom: 22px;
+    display: grid;
+    gap: 16px;
+}
+
+.prompt-editor textarea {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid rgba(123, 132, 155, 0.35);
+    background: rgba(0, 0, 0, 0.2);
+    color: inherit;
+    padding: 10px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    resize: vertical;
+}
+
+body[data-theme="light"] .prompt-editor textarea {
+    background: rgba(255, 255, 255, 0.92);
+    border-color: rgba(193, 201, 216, 0.7);
+}
+
+.prompt-editor code {
+    font-size: 0.82em;
+    padding: 1px 5px;
+    border-radius: 5px;
+    background: rgba(123, 132, 155, 0.22);
+}
+
 label {
     display: grid;
     gap: 6px;
