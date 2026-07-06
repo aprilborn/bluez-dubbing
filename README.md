@@ -33,6 +33,7 @@ It integrates state-of-the-art models for **ASR** (Automatic Speech Recognition)
 * **Independent Web UI:** A dedicated app offering an intuitive experience and live progress tracking. See [Web UI](#web-ui) for details.  
 * **Modular Services:** Easily plug, swap, or extend ASR, translation, and TTS models.
 * **Flexible Translation:** Segment-wise or full-text translation with smart synchronization.
+* **LLM-Polished Translation (default):** A two-pass `llm_polish` model refines an M2M-100 draft with a local LLM (via [Ollama](https://ollama.com/)) for natural, context-consistent phrasing — using the source text to repair meaning distortions. Its prompts are fully editable right in the Web UI.
 * **Advanced Audio Synchronization:** Multiple algorithms for seamless and natural voice replacement.
 * **Subtitle Generation:** Netflix-style, bold-desktop, or mobile-optimized SRT/VTT/ASS output.
 
@@ -162,6 +163,18 @@ This sets up `.venv` environments for each service (ASR, translation, TTS, orche
 * Set required variables (`HF_TOKEN`, `ORCHESTRATOR_ALLOWED_ORIGINS`, etc.)
 * Place model weights in `models_cache/`
 
+> **Ollama (for the default `llm_polish` translation model):** `llm_polish` is the
+> default translator and polishes the draft with a local LLM. Install
+> [Ollama](https://ollama.com/), make sure it is running (default
+> `http://localhost:11434`), and pull the polish model:
+>
+> ```bash
+> ollama pull gemma4:12b-it-qat   # the model set in config/llm_polish.yaml — swap for your own
+> ```
+>
+> Prefer not to run an LLM? Select `deep_translator` or `facebook_m2m100` as the
+> translation model in the UI (or `tr_model=` via the API) and Ollama isn't needed.
+
 ### 4. Run the Backend Stack
 
 ```bash
@@ -170,6 +183,10 @@ make stack-up       # Launch ASR, translation, TTS, orchestrator
 make stop           # Stop all services
 make restart        # Restart everything
 ```
+
+> Services run with hot-reload scoped to each service's `app/` source (so the
+> file watcher doesn't scan the huge `.venv/` and `models/` trees and spike the
+> CPU at idle). Disable reload entirely with `make stack-up RELOAD=`.
 
 ### 5. Serve the Frontend UI
 
@@ -199,7 +216,7 @@ make stop
 
 ### Web UI
 
-<img width="2560" height="1485" alt="Screenshot 2025-11-12 121321" src="https://github.com/user-attachments/assets/e2b96024-7bf9-4bb0-85c6-6dc70c418df9" />
+<img alt="Screenshot 2026-06-05" src="assets/bluez-dubbing-screenshot.webp" />
 
 After serving the frontend:
 
@@ -209,6 +226,7 @@ After serving the frontend:
 * Preview or download results
 * Choose **Lazy Mode** (fully automatic) or **Involve Mode** (manual fine-tuning)
 * Toggle “Keep Intermediate Artefacts” to retain separated tracks or transcripts
+* Edit the local LLM's translation prompts under **LLM Polish Instructions** — the system prompt, context block, and user prompt (keep the `{{placeholder}}` tokens). Edits are saved in your browser and applied whenever the `llm_polish` model runs; **Reset to defaults** restores them.
 
 ### API Example
 
@@ -227,7 +245,7 @@ curl -X POST -G 'http://localhost:8000/v1/dub' \
   --data-urlencode 'persist_intermediate=false'
 ```
 
-Outputs are saved to `apps/backend/outs/<workspace_id>/`.
+Outputs are saved to `apps/backend/outs/<workspace_id>/`. If `tr_model` is omitted (or set to `auto`), it defaults to `llm_polish`, which requires a running Ollama instance; pass `tr_model=deep_translator` (as above) or `tr_model=facebook_m2m100` to translate without an LLM.
 
 ---
 
@@ -281,15 +299,15 @@ Ensure your PRs keep all tests green.
 ## 🧩 Supported Models
 
 * **ASR:** [WhisperX](https://github.com/m-bain/whisperx)
-* **Translation:** [deep-translator](https://github.com/nidhaloff/deep-translator), M2M100, etc.
+* **Translation:** `llm_polish` (default), [deep-translator](https://github.com/nidhaloff/deep-translator), M2M100, etc.
 * **TTS:** Edge TTS, Chatterbox, and more
 
 - **ASR:** WhisperX out of the box; extend via `services/asr/app/registry.py`.
-- **Translation:** `deep_translator`, M2M100, and pluggable custom translators.
+- **Translation:** `llm_polish` (default — M2M-100 draft polished by a local [Ollama](https://ollama.com/) LLM), `deep_translator`, `facebook_m2m100`, and pluggable custom translators.
 - **TTS:** Edge TTS, Chatterbox, plus any custom registry entry.
 
 
-See `libs/common-schemas/config/` for model configs and supported languages.
+See `libs/common-schemas/config/` for model configs and supported languages — `config/llm_polish.yaml` holds the Ollama URL, model, batching, and other polish settings.
 
 ---
 
@@ -320,13 +338,8 @@ Thanks to these open-source projects:
 * [WhisperX](https://github.com/m-bain/whisperx)
 * [pyannote-audio](https://github.com/pyannote/pyannote-audio)
 * [deep-translator](https://github.com/nidhaloff/deep-translator)
+* [Ollama](https://github.com/ollama/ollama)
 * [Edge-TTS](https://github.com/rany2/edge-tts)
 * [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 * [Chatterbox](https://github.com/resemble-ai/chatterbox)
 
----
-
-**Contact:**
-📧 [contactglobluez@gmail.com](mailto:contactglobluez@gmail.com)
-
----

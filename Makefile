@@ -4,7 +4,10 @@ ROOT := $(CURDIR)
 BACKEND_ROOT := $(ROOT)/apps/backend
 PYTHONPATH_BASE := $(BACKEND_ROOT):$(ROOT)
 UV ?= uv
-RELOAD ?= --reload
+# Only watch each service's `app/` source for hot-reload. Watching the full cwd
+# (the default) recursively scans the huge `.venv/` and `models/` trees, which
+# pegs a CPU core at idle. Override with `RELOAD=` to disable reload entirely.
+RELOAD ?= --reload --reload-dir app
 UI_PORT ?= 5173
 SERVICES := asr translation tts orchestrator
 export UV_CACHE_DIR := $(ROOT)/.uv_cache
