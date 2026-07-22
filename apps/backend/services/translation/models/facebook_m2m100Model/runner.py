@@ -54,18 +54,24 @@ def _translate(req: TranslateRequest) -> ASRResponse:
 
     out = ASRResponse()
     skip_special = (req.extra or {}).get("skip_special_tokens", True)
+    # M2M-100 needs an explicit source language; there is no auto-detect. When the
+    # caller doesn't provide one (e.g. ASR failed to detect), fall back to English
+    # so the draft still runs instead of crashing with KeyError(None).
+    src_lang = req.source_lang or "en"
+    if not req.source_lang:
+        logger.warning("No source language provided; defaulting src_lang to 'en' for the draft.")
     logger.info(
         "Starting M2M translation segments=%d source=%s target=%s model=%s device=%s",
         len(req.segments or []),
-        req.source_lang,
+        src_lang,
         req.target_lang,
         model_name,
         device,
     )
+    tokenizer.src_lang = src_lang
 
     for segment in req.segments:
         seg_start = time.perf_counter()
-        tokenizer.src_lang = req.source_lang
         encoded = tokenizer(segment.text, return_tensors="pt")
         encoded = {k: v.to(device) for k, v in encoded.items()}
 

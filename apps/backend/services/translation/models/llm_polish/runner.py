@@ -31,13 +31,13 @@ _DEFAULT_OLLAMA_MODEL = "gemma4:12b-it-qat"
 _SYSTEM_PROMPT = (
     "You are a professional subtitle localization editor. You receive a full "
     "list of subtitle segments for one video, each with the original text and a "
-    "rough machine-translated draft. You improve the draft translations as a "
-    "single conversation: fix cross-segment pronoun and reference consistency, "
+    "rough machine-translated draft. Pay close attention to the text and grammar."
+    "You improve the draft translations as a single conversation: fix cross-segment pronoun and reference consistency, "
     "remove overly literal or awkward phrasing, and make every line natural and "
-    "idiomatic in the target language while preserving the exact meaning. "
-    "Write numbers as words (2 -> two). You "
-    "MUST NOT merge, split, reorder, add or drop segments. Return one improved "
-    "line per input segment, keyed by its id. Respond with JSON only."
+    "idiomatic in the target language while preserving the exact meaning. You "
+    "MUST NOT merge, split, reorder, add or drop segments. "
+    "Return one improved line per input segment, keyed by its id. "
+    "Respond with JSON only."
 )
 
 
@@ -170,6 +170,8 @@ def _polish_chunk(
         "- Only improve the translated text; keep meaning faithful to `original`.\n"
         "- Fix pronouns/references so they stay consistent across segments.\n"
         "- Prefer natural, idiomatic phrasing over literal word-for-word.\n"
+        "- Write numbers as words (2 -> two).\n"
+        "- Do not double-up on segments.\n"
         "- Never merge, split, add or drop segments."
     )
 
