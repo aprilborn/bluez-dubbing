@@ -34,7 +34,8 @@ _SYSTEM_PROMPT = (
     "rough machine-translated draft. You improve the draft translations as a "
     "single conversation: fix cross-segment pronoun and reference consistency, "
     "remove overly literal or awkward phrasing, and make every line natural and "
-    "idiomatic in the target language while preserving the exact meaning. You "
+    "idiomatic in the target language while preserving the exact meaning. "
+    "Write numbers as words (2 -> two). You "
     "MUST NOT merge, split, reorder, add or drop segments. Return one improved "
     "line per input segment, keyed by its id. Respond with JSON only."
 )
