@@ -737,3 +737,8 @@ body[data-theme="light"] .audio-prompt-input {
     padding: 6px 12px;
     font-size: 0.8rem;
 }
+
+#sep-model {
+    max-width: calc(100% - 45px);
+    padding-right: 20px;
+}

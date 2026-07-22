@@ -3,6 +3,7 @@ export const state = {
   asrModels: [],
   translationModels: [],
   ttsModels: [],
+  ttsSpeakers: {},
   uploadToken: "",
   sourceDescriptor: "",
   runId: "",

@@ -73,6 +73,7 @@ from preprocessing.media_separation import (
 from services.asr.app.registry import WORKERS as ASR_WORKERS
 from services.translation.app.registry import WORKERS as TR_WORKERS
 from services.tts.app.registry import WORKERS as TTS_WORKERS
+from common_schemas.service_utils import load_model_config
 
 logger = logging.getLogger("bluez.orchestrator")
 if not logger.handlers:
@@ -245,6 +246,28 @@ def list_worker_models(workers: Dict[str, Any]) -> List[Dict[str, Any]]:
             }
         )
     return items
+
+
+def list_tts_speakers() -> Dict[str, Dict[str, List[str]]]:
+    """Per-model, per-language selectable speaker catalog for the UI.
+
+    Only models that declare a `speaker_catalog` in their config (currently
+    silero) are included; other TTS models pick voices internally.
+    """
+    catalog: Dict[str, Dict[str, List[str]]] = {}
+    for model_key in TTS_WORKERS:
+        try:
+            cfg = load_model_config(model_key)
+        except Exception:
+            continue
+        speakers = (cfg.get("params", {}) or {}).get("speaker_catalog")
+        if isinstance(speakers, dict) and speakers:
+            catalog[model_key] = {
+                str(lang).lower(): [str(s) for s in voices]
+                for lang, voices in speakers.items()
+                if voices
+            }
+    return catalog
 
 
 def list_audio_separation_models() -> List[Dict[str, Any]]:
@@ -861,6 +884,7 @@ async def synthesize_tts(
     tr_result: ASRResponse,
     target_lang: str,
     workspace_path: Path,
+    forced_speaker: Optional[str] = None,
 ) -> TTSResponse:
     ensure_segment_ids(tr_result)
     tts_segments = [
@@ -877,6 +901,8 @@ async def synthesize_tts(
     ]
 
     tts_req = TTSRequest(segments=tts_segments, workspace=str(workspace_path), language=target_lang)
+    if forced_speaker:
+        tts_req.extra = {**(tts_req.extra or {}), "forced_speaker": forced_speaker}
     response = await client.post(TTS_URL, params={"model_key": tts_model}, json=tts_req.model_dump())
     if response.status_code != 200:
         raise HTTPException(500, f"TTS failed: {response.text}")
@@ -1173,6 +1199,7 @@ async def pipeline_options() -> JSONResponse:
             "asr_models": list_worker_models(ASR_WORKERS),
             "translation_models": list_worker_models(TR_WORKERS),
             "tts_models": list_worker_models(TTS_WORKERS),
+            "tts_speakers": list_tts_speakers(),
             "audio_separation_models": list_audio_separation_models(),
             "translation_strategies": TRANSLATION_STRATEGIES,
             "dubbing_strategies": DUBBING_STRATEGIES,
@@ -1422,6 +1449,7 @@ async def pipeline_run(
         asr_model: Optional[str] = Form("auto"),
         tr_model: Optional[str] = Form("auto"),
         tts_model: Optional[str] = Form("auto"),
+        tts_speaker: Optional[str] = Form(None),
         sep_model: Optional[str] = Form("auto"),
         audio_sep: str = Form("true"),
         perform_vad_trimming: str = Form("true"),
@@ -1485,6 +1513,7 @@ async def pipeline_run(
                     asr_model=asr_model,
                     tr_model=tr_model,
                     tts_model=tts_model,
+                    tts_speaker=tts_speaker,
                     audio_sep=parse_bool(audio_sep),
                     perform_vad_trimming=parse_bool(perform_vad_trimming),
                     translation_strategy=translation_strategy,
@@ -1620,6 +1649,7 @@ async def dub(
     asr_model: str = Query("whisperx"),
     tr_model: str = Query("facebook_m2m100"),
     tts_model: str = Query("chatterbox"),
+    tts_speaker: Optional[str] = Query(None, description="Force a specific silero speaker for the primary target language"),
     audio_sep: bool = Query(True, description="Whether to perform audio source separation"),
     perform_vad_trimming: bool = Query(True, description="Whether to perform VAD-based silence trimming after TTS"),
     translation_strategy: str = Query(
@@ -1672,6 +1702,9 @@ async def dub(
 
     requested_tr_model = (tr_model or "").strip()
     requested_tts_model = (tts_model or "").strip()
+    # Voice forced from the UI speaker dropdown; corresponds to the primary
+    # (first) target language, so it is only applied to that language below.
+    requested_tts_speaker = (tts_speaker or "").strip() or None
 
     asr_model = resolve_model_choice(asr_model, ASR_WORKERS, source_lang, fallback= general_cfg.get("default_models", {}).get("asr", "whisperx"))
 
@@ -2052,8 +2085,9 @@ async def dub(
                     tts_output_dir = workspace.ensure_dir(f"tts/{lang}")
                 else:
                     tts_output_dir = workspace.make_temp_dir(f"tts_{lang}")
+                forced_speaker = requested_tts_speaker if lang == default_language else None
                 with step_timer.time(f"tts{lang_suffix}"):
-                    tts_result = await synthesize_tts(client, tts_model_key, tr_result_local, lang, tts_output_dir)
+                    tts_result = await synthesize_tts(client, tts_model_key, tr_result_local, lang, tts_output_dir, forced_speaker)
                 
 
                 if involve_mode:

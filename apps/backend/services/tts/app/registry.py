@@ -16,6 +16,11 @@ WORKERS = {
             runner=BASE/"models/edgeTTsModel/runner.py",
             languages=read_model_languages("edge_tts")
         ),
+        "silero": Worker(
+            venv_python=BASE/"models/sileroModel/.venv/bin/python",
+            runner=BASE/"models/sileroModel/runner.py",
+            languages=read_model_languages("silero")
+        ),
     }
 
 def get_worker(model_key: str | None, language: str) -> tuple[Path, Path]:

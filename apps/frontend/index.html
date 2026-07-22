@@ -109,12 +109,22 @@
                             </select>
                         </label>
                     </div>
-                    <label>
-                        Audio Separation Model
-                        <select name="sep_model" id="sep-model">
-                            <option value="auto">Auto</option>
-                        </select>
-                    </label>
+
+                    <div class="flex">
+                        <label style="width: 66%;">
+                            Audio Separation Model
+                            <select name="sep_model" id="sep-model">
+                                <option value="auto">Auto</option>
+                            </select>
+                        </label>
+    
+                        <label id="tts-speaker-field" hidden>
+                            Silero Speaker
+                            <select name="tts_speaker" id="tts-speaker">
+                                <option value="">Auto (per speaker)</option>
+                            </select>
+                        </label>
+                    </div>
                 </fieldset>
 
                 <fieldset>

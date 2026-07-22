@@ -1,0 +1,13 @@
+[project]
+name = "sileromodel"
+version = "0.1.0"
+description = "Silero TTS worker for the Bluez dubbing pipeline"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "silero-tts>=0.0.5",
+    "common-schemas"
+]
+
+[tool.uv.sources]
+common-schemas = { path = "../../../../libs/common-schemas" , editable = true}

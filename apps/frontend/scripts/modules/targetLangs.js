@@ -1,6 +1,7 @@
 import { state } from "./state.js";
 import { lang } from "./language.js";
 import { models } from "./models.js";
+import { ttsSpeaker } from "./ttsSpeaker.js";
 import { el } from "./dom.js";
 
 export const targetLangs = {
@@ -77,5 +78,6 @@ export const targetLangs = {
     const sourceCode = lang.resolve(el.sourceLang?.value || "");
     models.refresh(document.getElementById("tr-model"), state.translationModels, primary || sourceCode);
     models.refresh(document.getElementById("tts-model"), state.ttsModels, primary);
+    ttsSpeaker.update();
   }
 };

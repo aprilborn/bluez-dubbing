@@ -4,6 +4,7 @@ import { state } from './state.js';
 import { lang } from './language.js';
 import { models } from './models.js';
 import { targetLangs } from './targetLangs.js';
+import { ttsSpeaker } from './ttsSpeaker.js';
 import { ui } from './ui.js';
 import { token } from './token.js';
 import { results } from './results.js';
@@ -31,6 +32,7 @@ const handlers = {
     state.asrModels = opts.asr_models || [];
     state.translationModels = opts.translation_models || [];
     state.ttsModels = opts.tts_models || [];
+    state.ttsSpeakers = opts.tts_speakers || {};
     
     const codes = new Set();
     [state.asrModels, state.translationModels, state.ttsModels].forEach(group => {
@@ -43,6 +45,8 @@ const handlers = {
     models.refresh(asrSelect, state.asrModels, initSourceCode);
     models.refresh(trSelect, state.translationModels, initTargetCode);
     models.refresh(ttsSelect, state.ttsModels, initTargetCode);
+
+    ttsSelect.onchange = () => ttsSpeaker.update();
     
     opts.audio_separation_models.forEach(group => {
       const optGroup = document.createElement("optgroup");
@@ -105,6 +109,7 @@ const handlers = {
     
     fillLanguageOptions();
     targetLangs.updateModels();
+    ttsSpeaker.update();
     
     const updateLangSuggestions = inputEl => {
       if (inputEl) fillLanguageOptions(inputEl.value);
@@ -368,6 +373,11 @@ const handlers = {
     formData.set("sophisticated_dub_timing", document.getElementById("sophisticated-timing").checked ? "true" : "false");
     formData.set("persist_intermediate", document.getElementById("persist-intermediate").checked ? "true" : "false");
     formData.set("involve_mode", state.involveMode ? "true" : "false");
+
+    // Only forward a forced speaker when the (silero-only) control is visible and set.
+    if (el.ttsSpeakerField?.hidden || !el.ttsSpeaker?.value) {
+      formData.delete("tts_speaker");
+    }
     
     const normalizeSpeakerField = (field, label) => {
       const raw = formData.get(field);
