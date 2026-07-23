@@ -112,6 +112,12 @@ params:
 
   # Local Ollama instance used to polish the draft.
   ollama_url: http://localhost:11434
+  # gemma4 is a "thinking" model: with reasoning ON it spends most of its output
+  # budget on chain-of-thought (~5x slower) AND that reasoning overflows the
+  # context on larger batches, which used to dump whole chunks back to the raw
+  # draft. The detailed polish prompt + JSON schema don't need it, so disable it.
+  # Set to null (or remove) if you switch ollama_model to a non-thinking model.
+  ollama_think: false
   # Requested gemma3:12b-it-qat is not installed on this host; gemma4:12b-it-qat is the
   # available equivalent. Change this to gemma3:12b-it-qat once it is pulled into Ollama.
   ollama_model: gemma4:12b-it-qat
@@ -127,6 +133,13 @@ params:
   # read-only context to keep pronouns/references consistent across chunks.
   batch_size: 20
   context_size: 4
+  # Chunks are ALSO capped by combined original+draft characters, because long
+  # paragraph-style segments (not just many segments) overflow the context window
+  # and make the model return an empty response — which used to dump the whole
+  # batch back to the raw draft. 0 = auto (num_ctx // 3). Any chunk that still
+  # comes back empty is automatically split in half and retried, so segments only
+  # fall back to the draft as a last resort, one at a time.
+  max_chunk_chars: 0
   # Context window / max output tokens. gemma default is only 4096, which
   # truncates larger batches; 8192 comfortably covers batch_size=20.
   num_ctx: 8192

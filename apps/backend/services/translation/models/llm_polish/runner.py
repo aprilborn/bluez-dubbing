@@ -134,9 +134,76 @@ _POLISH_SCHEMA = {
 }
 
 
-def _chunks(items: List[Dict[str, object]], size: int):
-    for i in range(0, len(items), size):
-        yield items[i : i + size]
+def _segment_chars(item: Dict[str, object]) -> int:
+    return len(str(item.get("original", ""))) + len(str(item.get("draft", "")))
+
+
+def _chunks(items: List[Dict[str, object]], size: int, max_chars: int):
+    """Group segments into chunks bounded by BOTH a max count and a max combined
+    (original+draft) character budget. Long paragraph-style segments would blow
+    past the model's context window if we only capped by count, which makes the
+    model return an empty response and forces the whole chunk back to draft.
+    """
+    cur: List[Dict[str, object]] = []
+    cur_chars = 0
+    for item in items:
+        c = _segment_chars(item)
+        if cur and (len(cur) >= size or cur_chars + c > max_chars):
+            yield cur
+            cur, cur_chars = [], 0
+        cur.append(item)
+        cur_chars += c
+    if cur:
+        yield cur
+
+
+def _polish_recursive(
+    chunk: List[Dict[str, object]],
+    context_pairs: List[Dict[str, object]],
+    req: TranslateRequest,
+    http: httpx.Client,
+    model: str,
+    options: Dict[str, object],
+    keep_alive: object,
+    timeout: float,
+    context_size: int,
+    logger: logging.Logger,
+    think: object = None,
+) -> Dict[int, str]:
+    """Polish a chunk, transparently halving-and-retrying when the model returns
+    an empty/short response for part of it (typically the batch is still too large
+    for the context window). Returns id->text for everything it managed to polish;
+    a single segment that fails even on its own is left out so the caller falls
+    back to its draft for that one segment only — never the whole batch.
+    """
+    ctx = context_pairs[-context_size:] if context_size else []
+    try:
+        got = _polish_chunk(chunk, ctx, req, http, model, options, keep_alive, timeout, think)
+    except Exception as exc:  # noqa: BLE001 - degrade gracefully, never fail the job
+        got = {}
+        logger.warning(
+            "polish chunk (ids %s-%s, n=%d) failed (%s: %s)%s",
+            chunk[0]["id"],
+            chunk[-1]["id"],
+            len(chunk),
+            type(exc).__name__,
+            exc,
+            "; splitting and retrying." if len(chunk) > 1 else "; using draft.",
+        )
+
+    missing = [it for it in chunk if not str(got.get(int(it["id"]), "") or "").strip()]
+    if not missing or len(missing) == 1:
+        return got  # fully polished, or a lone segment we can't shrink further
+
+    # Retry just the missing segments, split in half to shrink the prompt.
+    mid = len(missing) // 2
+    left = _polish_recursive(missing[:mid], context_pairs, req, http, model, options, keep_alive, timeout, context_size, logger, think)
+    ext_ctx = context_pairs + [
+        {"original": it["original"], "text": left.get(int(it["id"])) or it["draft"]}
+        for it in missing[:mid]
+    ]
+    right = _polish_recursive(missing[mid:], ext_ctx, req, http, model, options, keep_alive, timeout, context_size, logger, think)
+    return {**got, **left, **right}
 
 
 def _polish_chunk(
@@ -148,6 +215,7 @@ def _polish_chunk(
     options: Dict[str, object],
     keep_alive: object,
     timeout: float,
+    think: object = None,
 ) -> Dict[int, str]:
     context_block = ""
     if context_pairs:
@@ -186,6 +254,10 @@ def _polish_chunk(
             {"role": "user", "content": user_prompt},
         ],
     }
+    # Thinking models (e.g. gemma) burn most of the output budget on reasoning,
+    # which is slow and can overflow the context; allow turning it off.
+    if think is not None:
+        body["think"] = think
 
     resp = http.post("/api/chat", json=body, timeout=timeout)
     resp.raise_for_status()
@@ -220,20 +292,39 @@ def _call_ollama(items: List[Dict[str, object]], req: TranslateRequest, logger: 
     model = extra.get("ollama_model", _DEFAULT_OLLAMA_MODEL)
     timeout = float(extra.get("ollama_timeout", 600))
     keep_alive = extra.get("ollama_keep_alive", 0)
+    # `ollama_keep_alive: 0` unloads gemma right after each request to free the GPU
+    # for ASR/TTS. But polishing now issues several chunk requests per run, so a
+    # literal 0 would reload the 8GB model between every chunk. Keep it warm across
+    # the run, then unload once at the end when the caller asked for 0.
+    unload_after = keep_alive in (0, "0", 0.0) or (isinstance(keep_alive, str) and keep_alive.strip() in ("0", "0s"))
+    warm_keep_alive = "5m" if unload_after else keep_alive
     batch_size = int(extra.get("batch_size", 20)) or len(items)
     context_size = int(extra.get("context_size", 4))
     strict = bool(extra.get("strict_polish", False))
+    num_ctx = int(extra.get("num_ctx", 8192))
+    # Optional: disable the model's chain-of-thought (much faster for thinking
+    # models like gemma). None = leave the model default. The split-and-retry
+    # below still guards completeness if a leaner response drops segments.
+    think = extra.get("ollama_think", None)
     options = {
         "temperature": float(extra.get("temperature", 0.2)),
-        "num_ctx": int(extra.get("num_ctx", 8192)),
+        "num_ctx": num_ctx,
         "num_predict": int(extra.get("num_predict", 8192)),
     }
+    # Combined original+draft char budget per chunk. The model must fit the prompt
+    # AND its (similar-length) polished output inside num_ctx, so keep the input to
+    # roughly half the window in chars (Cyrillic/CJK run ~2 chars/token, so this
+    # leaves headroom for the output). Short subtitle segments still batch up to
+    # `batch_size`; only long paragraph segments trip this cap. Overridable via
+    # `max_chunk_chars`; the recursive split below catches any residual overflow.
+    max_chunk_chars = int(extra.get("max_chunk_chars", 0)) or max(1500, num_ctx // 3)
 
     logger.info(
-        "Polishing %d segments via Ollama model=%s (batch_size=%d)",
+        "Polishing %d segments via Ollama model=%s (batch_size=%d, max_chunk_chars=%d)",
         len(items),
         model,
         batch_size,
+        max_chunk_chars,
     )
 
     polished: Dict[int, str] = {}
@@ -241,19 +332,10 @@ def _call_ollama(items: List[Dict[str, object]], req: TranslateRequest, logger: 
     fallbacks = 0
 
     with httpx.Client(base_url=base_url) as http:
-        for chunk in _chunks(items, batch_size):
-            ctx = finalized_context[-context_size:] if context_size else []
-            try:
-                got = _polish_chunk(chunk, ctx, req, http, model, options, keep_alive, timeout)
-            except Exception as exc:  # noqa: BLE001 - degrade to draft, never fail the job
-                logger.warning(
-                    "polish chunk (ids %d-%d) failed (%s: %s); using draft for these.",
-                    chunk[0]["id"],
-                    chunk[-1]["id"],
-                    type(exc).__name__,
-                    exc,
-                )
-                got = {}
+        for chunk in _chunks(items, batch_size, max_chunk_chars):
+            got = _polish_recursive(
+                chunk, finalized_context, req, http, model, options, warm_keep_alive, timeout, context_size, logger, think
+            )
 
             for item in chunk:
                 cid = int(item["id"])
@@ -264,6 +346,13 @@ def _call_ollama(items: List[Dict[str, object]], req: TranslateRequest, logger: 
                     logger.warning("segment id=%d missing/empty from LLM; using draft.", cid)
                 polished[cid] = text
                 finalized_context.append({"original": item["original"], "text": text})
+
+        # Honor the caller's unload request once, after all chunks are done.
+        if unload_after:
+            try:
+                http.post("/api/generate", json={"model": model, "keep_alive": 0}, timeout=30)
+            except Exception as exc:  # noqa: BLE001 - best-effort GPU release
+                logger.debug("Ollama unload request failed: %s", exc)
 
     if fallbacks:
         msg = f"{fallbacks}/{len(items)} segments fell back to the draft translation."
