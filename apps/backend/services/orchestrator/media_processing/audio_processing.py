@@ -270,6 +270,59 @@ def rubberband_to_duration(in_wav, target_ms, out_wav):
     print(f"   ✅ Saved: {out_wav}")
     return out_wav
 
+def fit_overrunning_segments_to_slots(
+    segments: List[Dict],
+    output_dir: Path | str,
+    tolerance: float = 0.15,
+) -> List[Dict]:
+    """Time-compress any TTS segment whose audio is longer than its [start, end]
+    slot so it fits, updating its ``audio_url`` in place.
+
+    Dubbing sync relies on each synthesized segment roughly matching the duration
+    of the source speech it replaces. Voice-cloning models (e.g. chatterbox) track
+    the source pace closely, but fixed-pace models (e.g. silero) can overrun a slot
+    by tens of percent. Left unfitted, the whole speech track ends up much longer
+    than the target and ``concatenate_audio`` uniformly rubberband-compresses it at
+    the end, which both speeds up and *shifts* every utterance -> progressive A/V
+    desync. Compressing the overrunning segments individually keeps each one anchored
+    to its own slot start.
+
+    Segments that already fit (within ``tolerance``) or are shorter than their slot
+    are left untouched — gentle stretching/centering of those is handled downstream
+    by ``concatenate_audio``.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for i, seg in enumerate(segments):
+        audio_url = seg.get("audio_url")
+        if not audio_url or not Path(audio_url).exists():
+            continue
+        start = seg.get("start")
+        end = seg.get("end")
+        if start is None or end is None:
+            continue
+        slot = float(end) - float(start)
+        if slot <= 0:
+            continue
+
+        actual = get_audio_duration(Path(audio_url))
+        # Only compress real overruns; allow a small tolerance so we don't churn
+        # segments that are already essentially on time.
+        if actual <= slot * (1.0 + tolerance):
+            continue
+
+        fitted = output_dir / f"fitted_{i}_{Path(audio_url).stem}.wav"
+        try:
+            rubberband_to_duration(audio_url, slot * 1000.0, str(fitted))
+            seg["audio_url"] = str(fitted)
+            print(f"   Fitted segment {i}: {actual:.2f}s -> {slot:.2f}s slot")
+        except Exception as exc:  # noqa: BLE001 - keep original audio on failure
+            print(f"   Segment {i}: fit-to-slot failed ({exc}); keeping original.")
+
+    return segments
+
+
 def adjust_audio_speed(input_files: List[Dict], output_dir: Optional[Path] = None) -> List[Dict]:
     """
         Adjust speed of multiple audio segments to match their target durations.
@@ -392,9 +445,11 @@ def concatenate_audio(segments, output_file, target_duration: Optional[float] = 
         else:
             # No target duration, just copy the file
             shutil.copy(audio_files[0], output_file)
-        
-        return output_file
-    
+
+        # Return the same (path, translation_segments) tuple shape as the
+        # multi-segment path so callers can always unpack two values.
+        return output_file, translation_segments
+
     # ========== NO TARGET DURATION ==========
     if target_duration is None:
         return _simple_concat(audio_files, output_file)

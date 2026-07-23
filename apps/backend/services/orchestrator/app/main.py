@@ -59,6 +59,7 @@ from common_schemas.utils import (
 )
 from media_processing.audio_processing import (
     concatenate_audio,
+    fit_overrunning_segments_to_slots,
     get_audio_duration,
     overlay_on_background,
     trim_audio_with_vad,
@@ -1086,6 +1087,21 @@ async def trim_tts_segments(tts_result: TTSResponse, vad_dir: Path) -> TTSRespon
             logger.warning("VAD trimming failed for segment %s: %s", idx, exc)
         trimmed_segments.append(seg)
     tts_result.segments = trimmed_segments
+    return tts_result
+
+
+async def fit_tts_segments(tts_result: TTSResponse, fit_dir: Path) -> TTSResponse:
+    """Compress any TTS segment that overruns its source slot so the speech track
+    doesn't end up far longer than the timeline (which would force a global,
+    misaligning time-compression during concatenation). Keeps each utterance
+    anchored to its own start time. No-op for segments that already fit."""
+    seg_views = [
+        {"audio_url": s.audio_url, "start": s.start, "end": s.end}
+        for s in tts_result.segments
+    ]
+    updated = await run_in_thread(fit_overrunning_segments_to_slots, seg_views, fit_dir)
+    for seg, view in zip(tts_result.segments, updated):
+        seg.audio_url = view["audio_url"]
     return tts_result
 
 
@@ -2122,12 +2138,23 @@ async def dub(
                         tts_result.model_dump(),
                     )
 
+                # Compress segments that overrun their source slot so the speech
+                # track stays close to the timeline length. Without this, fixed-pace
+                # TTS (e.g. silero) can overrun heavily and concatenation then
+                # globally time-compresses the whole track, desyncing audio/video.
+                if workspace.persist_intermediate:
+                    fit_dir = workspace.ensure_dir(f"tts_fitted/{lang}")
+                else:
+                    fit_dir = workspace.make_temp_dir(f"tts_fitted_{lang}")
+                with step_timer.time(f"tts_fit_slots{lang_suffix}"):
+                    tts_result = await fit_tts_segments(tts_result, fit_dir)
+
                 if workspace.persist_intermediate or not source_has_video:
                     audio_processing_dir = workspace.ensure_dir(f"audio_processing/{lang}")
                 else:
                     audio_processing_dir = workspace.make_temp_dir(f"audio_processing_{lang}")
 
-                
+
                 speech_track = audio_processing_dir / f"dubbed_speech_track_{lang}.wav"
                 with step_timer.time(f"audio_concatenate{lang_suffix}"):
                     concatenated_path, translation_segments = await concatenate_segments(
